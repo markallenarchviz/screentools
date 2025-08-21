@@ -9,7 +9,7 @@
   },
   "build": {
     "appId": "com.screentools",
-    "productName": "Screen Recorder",
+    "productName": "screentools",
     "files": [
       "main.js",
       "counter.html",
@@ -39,7 +39,7 @@
     "Screen Recorder",
     "FFmpeg"
   ],
-  "author": "Seu Nome",
+  "author": "Mark Allen",
   "license": "ISC",
   "devDependencies": {
     "electron": "^31.0.0",
