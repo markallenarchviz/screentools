@@ -1,6 +1,7 @@
-const { app, Menu, Tray, screen, BrowserWindow, ipcMain } = require("electron");
+const { app, Menu, Tray, screen, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 const { exec } = require("child_process");
+const fs = require('fs');
 
 // Variáveis globais
 let tray = null;
@@ -11,6 +12,8 @@ let counterInterval = null;
 let seconds = 0;
 const COUNTER_WINDOW_HEIGHT = 30;
 let indicatorWindow = null;
+let previewWindow = null;
+let lastVideoPath = null;
 
 /**
  * Cria a janela do contador de tempo.
@@ -124,8 +127,13 @@ const startRecording = (area = null) => {
 
     ffmpegProcess.on('exit', (code) => {
         console.log(`Processo ffmpeg encerrado com código ${code}`);
-        if (code !== 0 && code !== 255) console.error("A gravação falhou.");
-        else console.log(`Gravação salva em: ${outputPath}`);
+        if (code !== 0 && code !== 255) {
+            console.error("A gravação falhou.");
+        } else {
+            console.log(`Gravação temporária salva em: ${outputPath}`);
+            lastVideoPath = outputPath;
+            createPreviewWindow(outputPath);
+        }
         
         isRecording = false;
         ffmpegProcess = null;
@@ -208,6 +216,71 @@ const createIndicatorWindow = (area) => {
 };
 
 /**
+ * Cria a janela de pré-visualização do vídeo.
+ * @param {string} videoPath - Caminho do vídeo gravado.
+ */
+const createPreviewWindow = (videoPath) => {
+    // Usa ffprobe para obter as dimensões do vídeo
+    const ffprobeCommand = `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${videoPath}"`;
+
+    exec(ffprobeCommand, (error, stdout) => {
+        if (error) {
+            console.error('Erro ao obter dimensões do vídeo:', error);
+            // Fallback para tamanho padrão
+            createPreviewWindowSized(videoPath, 800, 600);
+            return;
+        }
+
+        const [width, height] = stdout.trim().split('x').map(Number);
+        createPreviewWindowSized(videoPath, width, height);
+    });
+};
+
+const createPreviewWindowSized = (videoPath, videoWidth, videoHeight) => {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const screenWorkAreaWidth = primaryDisplay.workAreaSize.width;
+    const screenWorkAreaHeight = primaryDisplay.workAreaSize.height;
+
+    // Calculate 80% of video's native resolution
+    let finalWidth = Math.round(videoWidth * 0.8);
+    let finalHeight = Math.round(videoHeight * 0.8);
+
+    // Ensure the window doesn't exceed screen work area dimensions
+    if (finalWidth > screenWorkAreaWidth) {
+        finalWidth = screenWorkAreaWidth;
+        finalHeight = Math.round(screenWorkAreaWidth * (videoHeight / videoWidth));
+    }
+    if (finalHeight > screenWorkAreaHeight) {
+        finalHeight = screenWorkAreaHeight;
+        finalWidth = Math.round(screenWorkAreaHeight * (videoWidth / videoHeight));
+    }
+
+    previewWindow = new BrowserWindow({
+        width: finalWidth,
+        height: finalHeight,
+        frame: false,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false,
+        },
+    });
+
+    previewWindow.loadFile('preview.html');
+    previewWindow.webContents.on('did-finish-load', () => {
+        previewWindow.webContents.send('video-path', videoPath);
+    });
+
+    previewWindow.on('closed', () => {
+        previewWindow = null;
+        // Opcional: deletar o arquivo temporário se não for salvo
+        if (lastVideoPath) {
+            // fs.unlinkSync(lastVideoPath);
+            lastVideoPath = null;
+        }
+    });
+};
+
+/**
  * Constrói e atualiza o menu da bandeja.
  */
 const updateTrayMenu = async () => {
@@ -254,6 +327,33 @@ ipcMain.on('make-window-clickable', () => {
 // Make the counter window unclickable
 ipcMain.on('make-window-unclickable', () => {
     counterWindow.setIgnoreMouseEvents(true, { forward: true });
+});
+
+// Mostra o diálogo para salvar o arquivo
+ipcMain.on('show-save-dialog', async (event, { startTime, endTime }) => {
+    if (!lastVideoPath) return;
+
+    const { filePath } = await dialog.showSaveDialog({
+        defaultPath: `recording-${Date.now()}.mp4`,
+        filters: [{ name: 'Videos', extensions: ['mp4'] }],
+    });
+
+    if (filePath) {
+        const duration = endTime - startTime;
+        // Re-encode video and audio to ensure compatibility after trimming
+        const trimCommand = `ffmpeg -i "${lastVideoPath}" -ss ${startTime} -t ${duration} -c:v libx264 -preset ultrafast -crf 23 -c:a aac "${filePath}"`;
+
+        exec(trimCommand, (error) => {
+            if (error) {
+                console.error('Erro ao cortar o vídeo:', error);
+            } else {
+                console.log(`Vídeo cortado e salvo em: ${filePath}`);
+                fs.unlinkSync(lastVideoPath); // Deleta o arquivo original
+                lastVideoPath = null;
+                if (previewWindow) previewWindow.close();
+            }
+        });
+    }
 });
 
 app.whenReady().then(() => {

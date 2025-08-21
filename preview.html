@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Recording Preview</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        .player {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+        }
+        .title-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 30px;
+            -webkit-app-region: drag;
+        }
+        .controls {
+            position: absolute;
+            bottom: 15px; /* Mais fino */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 95%; /* Ocupa mais largura */
+            max-width: 800px; /* Aumenta o max-width */
+            background-color: rgba(20, 20, 20, 0.8); /* Um pouco mais opaco */
+            padding: 8px 15px; /* Padding mais fino */
+            border-radius: 10px; /* Menos arredondado */
+            display: flex;
+            align-items: center;
+            gap: 10px; /* Menor espaçamento */
+            color: #e0e0e0; /* Cor de texto mais suave */
+            backdrop-filter: blur(12px); /* Mais blur */
+            border: 1px solid rgba(255, 255, 255, 0.08); /* Borda mais sutil */
+            transition: opacity 0.3s ease-in-out;
+            opacity: 0; /* Inicia invisível */
+        }
+        .player:hover .controls {
+            opacity: 1;
+        }
+        #play-pause-button, #save-button {
+            background: none;
+            border: none;
+            color: #e0e0e0; /* Cor de texto mais suave */
+            font-size: 18px; /* Menor fonte */
+            cursor: pointer;
+            padding: 4px 8px; /* Padding mais fino */
+            border-radius: 4px; /* Menos arredondado */
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        #play-pause-button:hover, #save-button:hover {
+            background-color: rgba(255, 255, 255, 0.15); /* Mais visível no hover */
+            color: #fff;
+        }
+        .timeline-container {
+            flex-grow: 1;
+            position: relative;
+            height: 20px; /* Altura para conter o slider e handles */
+            display: flex;
+            align-items: center;
+            margin: 0 5px;
+        }
+        .timeline-slider {
+            position: relative;
+            width: 100%;
+            height: 3px; /* A linha do slider */
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 1px;
+        }
+        .timeline-track {
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.3); /* Progresso não selecionado */
+            border-radius: 1px;
+        }
+        .timeline-selection {
+            position: absolute;
+            height: 100%;
+            background: #007bff; /* Seleção ativa */
+            border-radius: 1px;
+        }
+        .timeline-handle {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 2px; /* Fino como uma linha */
+            height: 12px; /* Altura do handle */
+            background: #007bff; /* Cor do handle */
+            border-radius: 1px;
+            cursor: ew-resize;
+            z-index: 10;
+        }
+        .left-handle {
+            left: 0;
+        }
+        .right-handle {
+            right: 0;
+        }
+        #time-display {
+            min-width: 80px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            font-size: 13px;
+            color: #c0c0c0;
+        }
+    </style>
+</head>
+<body>
+    <div class="player">
+        <div class="title-bar"></div>
+        <video></video>
+        <div class="controls">
+            <button id="play-pause-button">▶</button>
+            <div class="timeline-container">
+                <div id="timeline-slider" class="timeline-slider">
+                    <div class="timeline-track"></div>
+                    <div class="timeline-selection"></div>
+                    <div class="timeline-handle left-handle"></div>
+                    <div class="timeline-handle right-handle"></div>
+                </div>
+            </div>
+            <span id="time-display">00:00 / 00:00</span>
+            <button id="save-button">Save</button>
+        </div>
+    </div>
+    <script src="preview.js"></script>
+</body>
+</html>
