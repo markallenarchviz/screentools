@@ -10,6 +10,7 @@ let counterWindow = null;
 let counterInterval = null;
 let seconds = 0;
 const COUNTER_WINDOW_HEIGHT = 30;
+let indicatorWindow = null;
 
 /**
  * Cria a janela do contador de tempo.
@@ -49,7 +50,7 @@ const createCounterWindow = () => {
  * Inicia a gravação (tela cheia ou área selecionada).
  * @param {object|null} area - Objeto com {x, y, width, height} ou null para tela cheia.
  */
-const startRecording = () => {
+const startRecording = (area = null) => {
     if (isRecording) return;
     isRecording = true;
     updateTrayMenu();
@@ -69,16 +70,43 @@ const startRecording = () => {
     const commonOptions = `-c:v libx264 -preset ultrafast -pix_fmt yuv420p "${outputPath}"`;
     let command;
 
+    // Garante que a área seja um objeto com as propriedades corretas
+    const captureArea = area && typeof area === 'object' && 'x' in area && 'y' in area && 'width' in area && 'height' in area ? area : null;
+
+    if (captureArea) {
+        // Garante que a largura e a altura sejam números pares para o codec libx264
+        if (captureArea.width % 2 !== 0) {
+            captureArea.width--;
+        }
+        if (captureArea.height % 2 !== 0) {
+            captureArea.height--;
+        }
+    }
+
     switch (process.platform) {
-        case 'win32':
-            command = `ffmpeg -f gdigrab -framerate 30 -i desktop ${commonOptions}`;
+        case 'win32': // Windows
+            if (captureArea) {
+                command = `ffmpeg -f gdigrab -framerate 30 -offset_x ${captureArea.x} -offset_y ${captureArea.y} -video_size ${captureArea.width}x${captureArea.height} -i desktop ${commonOptions}`;
+            } else {
+                command = `ffmpeg -f gdigrab -framerate 30 -i desktop ${commonOptions}`;
+            }
             break;
-        case 'darwin':
-            command = `ffmpeg -f avfoundation -i "1:0" -r 30 ${commonOptions}`;
+        case 'darwin': // macOS
+            if (captureArea) {
+                // O formato para -i é "screen_index:capture_device_index" e -vf para cortar
+                command = `ffmpeg -f avfoundation -i "1:0" -r 30 -vf "crop=${captureArea.width}:${captureArea.height}:${captureArea.x}:${captureArea.y}" ${commonOptions}`;
+            } else {
+                command = `ffmpeg -f avfoundation -i "1:0" -r 30 ${commonOptions}`;
+            }
             break;
-        case 'linux':
-            const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-            command = `ffmpeg -f x11grab -r 30 -s ${width}x${height} -i :0.0 ${commonOptions}`;
+        case 'linux': // Linux
+            const primaryDisplay = screen.getPrimaryDisplay();
+            const { width, height } = primaryDisplay.workAreaSize;
+            if (captureArea) {
+                command = `ffmpeg -f x11grab -r 30 -s ${captureArea.width}x${captureArea.height} -i :0.0+${captureArea.x},${captureArea.y} ${commonOptions}`;
+            } else {
+                command = `ffmpeg -f x11grab -r 30 -s ${width}x${height} -i :0.0 ${commonOptions}`;
+            }
             break;
         default:
             console.error("Plataforma não suportada.");
@@ -114,19 +142,100 @@ const stopRecording = () => {
     if (!isRecording || !ffmpegProcess) return;
     console.log("Parando a gravação...");
     ffmpegProcess.stdin.write('q');
+    if (indicatorWindow) {
+        indicatorWindow.close();
+        indicatorWindow = null;
+    }
+};
+
+const getRecordingOptions = async () => {
+    return screen.getAllDisplays();
+};
+
+/**
+ * Cria uma janela para seleção de área.
+ */
+const createSelectionWindow = () => {
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+    const selectionWindow = new BrowserWindow({
+        width,
+        height,
+        x: 0,
+        y: 0,
+        transparent: true,
+        frame: false,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false,
+        },
+    });
+
+    selectionWindow.loadFile('selection.html'); // Novo arquivo HTML
+
+    ipcMain.once('selection-done', (event, area) => {
+        selectionWindow.close();
+        createIndicatorWindow(area);
+        startRecording(area);
+    });
+
+    selectionWindow.on('close', () => {
+        ipcMain.removeListener('selection-done', startRecording);
+    });
+};
+
+/**
+ * Cria uma janela para indicar a área de gravação.
+ * @param {object} area - Objeto com {x, y, width, height}.
+ */
+const createIndicatorWindow = (area) => {
+    indicatorWindow = new BrowserWindow({
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height,
+        transparent: true,
+        frame: false,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        focusable: false,
+    });
+
+    indicatorWindow.setIgnoreMouseEvents(true);
+    indicatorWindow.loadFile('indicator.html');
+    indicatorWindow.setContentProtection(true); // Impede a captura da janela (Win/macOS)
 };
 
 /**
  * Constrói e atualiza o menu da bandeja.
  */
-const updateTrayMenu = () => {
-    const template = [
-        isRecording
-            ? { label: "Stop Recording", click: stopRecording }
-            : { label: "Record Screen", click: startRecording },
-        { type: "separator" },
-        { label: "Sair", click: () => app.quit() },
-    ];
+const updateTrayMenu = async () => {
+    const recordingOptions = await getRecordingOptions();
+
+    const template = isRecording
+        ? [
+            { label: "Stop Recording", click: stopRecording },
+            { type: "separator" },
+            { label: "Exit", click: () => app.quit() },
+          ]
+        : [
+            {
+                label: "Record Full Screen",
+                click: () => startRecording(),
+            },
+            {
+                label: "Record Area",
+                click: createSelectionWindow,
+            },
+            { type: "separator" },
+            ...recordingOptions.map((display, index) => ({
+                label: `Record Screen ${index + 1} (${display.size.width}x${display.size.height})`,
+                click: () => startRecording(), // Ainda não implementado para telas específicas
+            })),
+            { type: "separator" },
+            { label: "Exit", click: () => app.quit() },
+          ];
 
     const contextMenu = Menu.buildFromTemplate(template);
     tray.setContextMenu(contextMenu);
