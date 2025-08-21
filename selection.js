@@ -3,8 +3,11 @@ const { ipcRenderer } = require('electron');
 let startX, startY;
 let selectionBox = document.createElement('div');
 selectionBox.className = 'selection-box';
-
 document.body.appendChild(selectionBox);
+
+ipcRenderer.on('screenshot-data', (event, dataUrl) => {
+    document.body.style.backgroundImage = `url(${dataUrl})`;
+});
 
 document.addEventListener('mousedown', (e) => {
     startX = e.clientX;
@@ -17,6 +20,12 @@ document.addEventListener('mousedown', (e) => {
 
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        window.close(); // Close the selection window on Escape key press
+    }
 });
 
 function onMouseMove(e) {

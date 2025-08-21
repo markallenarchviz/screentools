@@ -8,14 +8,14 @@
             margin: 0;
             padding: 0;
             overflow: hidden;
-            background-color: rgba(0, 0, 0, 0.3);
+            background-size: cover;
             cursor: crosshair;
         }
 
         .selection-box {
             position: absolute;
-            border: 2px dashed #fff;
-            background-color: rgba(255, 255, 255, 0.2);
+            border: 2px dashed red; /* Changed to red for better visibility */
+            background-color: rgba(255, 255, 255, 0.2); /* Semi-transparent white to make border visible */
         }
 
         .selection-done .selection-box {
@@ -25,9 +25,6 @@
     </style>
 </head>
 <body>
-    <script>
-        const { ipcRenderer } = require('electron');
-        require('./selection.js');
-    </script>
+    <script src="selection.js"></script>
 </body>
 </html>

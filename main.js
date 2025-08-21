@@ -2,6 +2,7 @@ const { app, Menu, Tray, screen, BrowserWindow, ipcMain, dialog } = require("ele
 const path = require("path");
 const { exec } = require("child_process");
 const fs = require('fs');
+const screenshot = require('screenshot-desktop');
 
 // Variáveis globais
 let tray = null;
@@ -68,6 +69,10 @@ const startRecording = (area = null) => {
         counterWindow.webContents.send('update-timer', formattedTime);
     }, 1000);
 
+    if (area && indicatorWindow) { // Show indicator window if recording an area
+        indicatorWindow.show();
+    }
+
     const tempPath = app.getPath("temp"); // Use temporary directory
     const outputPath = path.join(tempPath, `gravacao-${Date.now()}.mp4`);
     const commonOptions = `-c:v libx264 -preset ultrafast -pix_fmt yuv420p "${outputPath}"`;
@@ -89,7 +94,7 @@ const startRecording = (area = null) => {
     switch (process.platform) {
         case 'win32': // Windows
             if (captureArea) {
-                command = `ffmpeg -f gdigrab -framerate 30 -offset_x ${captureArea.x} -offset_y ${captureArea.y} -video_size ${captureArea.width}x${captureArea.height} -i desktop ${commonOptions}`;
+                command = `ffmpeg -f gdigrab -framerate 30 -i desktop -vf "crop=${captureArea.width}:${captureArea.height}:${captureArea.x}:${captureArea.y}" ${commonOptions}`;
             } else {
                 command = `ffmpeg -f gdigrab -framerate 30 -i desktop ${commonOptions}`;
             }
@@ -155,8 +160,7 @@ const stopRecording = () => {
     console.log("Parando a gravação...");
     ffmpegProcess.stdin.write('q');
     if (indicatorWindow) {
-        indicatorWindow.close();
-        indicatorWindow = null;
+        indicatorWindow.hide(); // Hide the indicator window when recording stops
     }
 };
 
@@ -167,14 +171,19 @@ const getRecordingOptions = async () => {
 /**
  * Cria uma janela para seleção de área.
  */
-const createSelectionWindow = () => {
-    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+const createSelectionWindow = async () => {
+    const displays = await screenshot.listDisplays();
+    const primaryDisplay = displays[0]; // Adjust if you have multiple monitors
+    const { width, height } = primaryDisplay;
+
+    const img = await screenshot({ screen: primaryDisplay.id, format: 'png' });
+    const dataUrl = `data:image/png;base64,${img.toString('base64')}`;
+
     const selectionWindow = new BrowserWindow({
         width,
         height,
         x: 0,
         y: 0,
-        transparent: true,
         frame: false,
         alwaysOnTop: true,
         skipTaskbar: true,
@@ -184,11 +193,15 @@ const createSelectionWindow = () => {
         },
     });
 
-    selectionWindow.loadFile('selection.html'); // Novo arquivo HTML
+    selectionWindow.loadFile('selection.html');
+
+    selectionWindow.webContents.on('did-finish-load', () => {
+        selectionWindow.webContents.send('screenshot-data', dataUrl);
+    });
 
     ipcMain.once('selection-done', (event, area) => {
         selectionWindow.close();
-        createIndicatorWindow(area);
+        createIndicatorWindow(area); // Create indicator window after selection
         startRecording(area);
     });
 
@@ -211,13 +224,19 @@ const createIndicatorWindow = (area) => {
         frame: false,
         alwaysOnTop: true,
         skipTaskbar: true,
-        focusable: false,
+        focusable: false, // Prevents window from stealing focus
     });
 
-    indicatorWindow.setIgnoreMouseEvents(true);
+    indicatorWindow.setIgnoreMouseEvents(true, { forward: true }); // Allows mouse events to pass through
     indicatorWindow.loadFile('indicator.html');
     indicatorWindow.setContentProtection(true); // Impede a captura da janela (Win/macOS)
+
+    indicatorWindow.on('close', (e) => {
+        e.preventDefault();
+        indicatorWindow.hide();
+    });
 };
+
 
 /**
  * Cria a janela de pré-visualização do vídeo.
@@ -262,6 +281,8 @@ const createPreviewWindowSized = (videoPath, videoWidth, videoHeight) => {
     previewWindow = new BrowserWindow({
         width: finalWidth,
         height: finalHeight,
+        minWidth: 600, // Set minimum width for the preview window
+        minHeight: 600, // Set minimum height for the preview window
         frame: false,
         webPreferences: {
             nodeIntegration: true,

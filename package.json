@@ -46,6 +46,7 @@
     "electron-builder": "^26.0.12"
   },
   "dependencies": {
-    "nouislider": "^15.8.1"
+    "nouislider": "^15.8.1",
+    "screenshot-desktop": "^1.15.2"
   }
 }
