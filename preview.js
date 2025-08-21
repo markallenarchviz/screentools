@@ -5,6 +5,7 @@ const saveButton = document.getElementById('save-button');
 const timelineSlider = document.getElementById('timeline-slider');
 const playPauseButton = document.getElementById('play-pause-button');
 const timeDisplay = document.getElementById('time-display');
+const closeButton = document.getElementById('close-button');
 
 const timelineTrack = document.querySelector('.timeline-track');
 const timelineSelection = document.querySelector('.timeline-selection');
@@ -76,6 +77,7 @@ document.addEventListener('mousemove', (e) => {
             video.currentTime = startSelectionTime;
         } else if (isDraggingRight) {
             endSelectionTime = Math.max(newTime, startSelectionTime + 0.1); // Minimum 0.1s selection
+            video.currentTime = newTime; // Update video current time in real-time
         }
         updateSliderUI();
         updateTimeDisplay();
@@ -85,6 +87,10 @@ document.addEventListener('mousemove', (e) => {
 document.addEventListener('mouseup', () => {
     isDraggingLeft = false;
     isDraggingRight = false;
+});
+
+closeButton.addEventListener('click', () => {
+    ipcRenderer.send('close-preview-window');
 });
 
 playPauseButton.addEventListener('click', () => {

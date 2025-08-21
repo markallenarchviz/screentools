@@ -68,8 +68,8 @@ const startRecording = (area = null) => {
         counterWindow.webContents.send('update-timer', formattedTime);
     }, 1000);
 
-    const desktopPath = app.getPath("desktop");
-    const outputPath = path.join(desktopPath, `gravacao-${Date.now()}.mp4`);
+    const tempPath = app.getPath("temp"); // Use temporary directory
+    const outputPath = path.join(tempPath, `gravacao-${Date.now()}.mp4`);
     const commonOptions = `-c:v libx264 -preset ultrafast -pix_fmt yuv420p "${outputPath}"`;
     let command;
 
@@ -129,17 +129,21 @@ const startRecording = (area = null) => {
         console.log(`Processo ffmpeg encerrado com código ${code}`);
         if (code !== 0 && code !== 255) {
             console.error("A gravação falhou.");
+            isRecording = false;
+            ffmpegProcess = null;
+            updateTrayMenu();
+            clearInterval(counterInterval);
+            counterWindow.hide();
         } else {
             console.log(`Gravação temporária salva em: ${outputPath}`);
             lastVideoPath = outputPath;
             createPreviewWindow(outputPath);
+            isRecording = false;
+            ffmpegProcess = null;
+            updateTrayMenu();
+            clearInterval(counterInterval);
+            counterWindow.hide();
         }
-        
-        isRecording = false;
-        ffmpegProcess = null;
-        updateTrayMenu();
-        clearInterval(counterInterval);
-        counterWindow.hide();
     });
 };
 
@@ -333,6 +337,11 @@ ipcMain.on('make-window-unclickable', () => {
 ipcMain.on('show-save-dialog', async (event, { startTime, endTime }) => {
     if (!lastVideoPath) return;
 
+    // Fecha a janela de preview antes de abrir o diálogo de salvar
+    if (previewWindow) {
+        previewWindow.close();
+    }
+
     const { filePath } = await dialog.showSaveDialog({
         defaultPath: `recording-${Date.now()}.mp4`,
         filters: [{ name: 'Videos', extensions: ['mp4'] }],
@@ -366,4 +375,11 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
     if (isRecording) stopRecording();
     if (counterWindow) counterWindow.destroy();
+    if (previewWindow) previewWindow.destroy(); // Garante que a janela de preview seja fechada
+});
+
+ipcMain.on('close-preview-window', () => {
+    if (previewWindow) {
+        previewWindow.close();
+    }
 });
