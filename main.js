@@ -278,7 +278,11 @@ const createPreviewWindowSized = (videoPath, videoWidth, videoHeight) => {
         previewWindow = null;
         // Opcional: deletar o arquivo temporário se não for salvo
         if (lastVideoPath) {
-            // fs.unlinkSync(lastVideoPath);
+            try {
+                fs.unlinkSync(lastVideoPath);
+            } catch (error) {
+                console.error('Failed to delete temp file:', error);
+            }
             lastVideoPath = null;
         }
     });
@@ -337,6 +341,9 @@ ipcMain.on('make-window-unclickable', () => {
 ipcMain.on('show-save-dialog', async (event, { startTime, endTime }) => {
     if (!lastVideoPath) return;
 
+    const videoToSave = lastVideoPath;
+    lastVideoPath = null; // Prevent the 'closed' event from deleting the file prematurely
+
     // Fecha a janela de preview antes de abrir o diálogo de salvar
     if (previewWindow) {
         previewWindow.close();
@@ -350,18 +357,24 @@ ipcMain.on('show-save-dialog', async (event, { startTime, endTime }) => {
     if (filePath) {
         const duration = endTime - startTime;
         // Re-encode video and audio to ensure compatibility after trimming
-        const trimCommand = `ffmpeg -i "${lastVideoPath}" -ss ${startTime} -t ${duration} -c:v libx264 -preset ultrafast -crf 23 -c:a aac "${filePath}"`;
+        const trimCommand = `ffmpeg -i "${videoToSave}" -ss ${startTime} -t ${duration} -c:v libx264 -preset ultrafast -crf 23 -c:a aac "${filePath}"`;
 
         exec(trimCommand, (error) => {
             if (error) {
                 console.error('Erro ao cortar o vídeo:', error);
+                lastVideoPath = videoToSave; // Restore path if save fails
             } else {
                 console.log(`Vídeo cortado e salvo em: ${filePath}`);
-                fs.unlinkSync(lastVideoPath); // Deleta o arquivo original
-                lastVideoPath = null;
-                if (previewWindow) previewWindow.close();
+                try {
+                    fs.unlinkSync(videoToSave); // Deleta o arquivo original
+                } catch (e) {
+                    console.error('Failed to delete temp file after saving:', e);
+                }
             }
         });
+    } else {
+        // User cancelled save, restore path
+        lastVideoPath = videoToSave;
     }
 });
 

@@ -4,7 +4,35 @@
   "description": "Um aplicativo simples para gravar a tela com Electron e FFmpeg.",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.example.screen-recorder",
+    "productName": "Screen Recorder",
+    "files": [
+      "main.js",
+      "counter.html",
+      "counter.css",
+      "counter.js",
+      "indicator.html",
+      "preview.html",
+      "preview.js",
+      "selection.html",
+      "selection.js",
+      "icon.png",
+      "node_modules/",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true
+    }
   },
   "keywords": [
     "Electron",
@@ -14,7 +42,8 @@
   "author": "Seu Nome",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^31.0.0"
+    "electron": "^31.0.0",
+    "electron-builder": "^26.0.12"
   },
   "dependencies": {
     "nouislider": "^15.8.1"
