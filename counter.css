@@ -1,0 +1,47 @@
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: white;
+    -webkit-user-select: none;
+    user-select: none;
+    height: 100vh;
+    overflow: hidden; /* Impede barras de rolagem */
+}
+
+.container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+#timer-container {
+    background-color: black;
+    padding: 5px 10px;
+    border-radius: 5px;
+}
+
+#timer {
+    font-size: 14px;
+    font-weight: normal;
+    line-height: 1;
+}
+
+#stop-button {
+    width: 24px; /* Aumentar o tamanho para acomodar o ícone */
+    height: 24px;
+    background-color: black;
+    cursor: pointer;
+    border-radius: 5px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#stop-button::before {
+    content: '';
+    width: 10px;
+    height: 10px;
+    background-color: red;
+    display: block;
+}

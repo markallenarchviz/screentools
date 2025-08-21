@@ -1,137 +1,160 @@
-const { app, Menu, Tray, screen } = require("electron");
+const { app, Menu, Tray, screen, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const { exec } = require("child_process");
 
-// Variáveis para controlar o estado da aplicação
+// Variáveis globais
 let tray = null;
-let ffmpegProcess = null; // Armazena o processo filho do ffmpeg
-let isRecording = false; // Flag para controlar o estado da gravação
+let ffmpegProcess = null;
+let isRecording = false;
+let counterWindow = null;
+let counterInterval = null;
+let seconds = 0;
+const COUNTER_WINDOW_HEIGHT = 30;
 
 /**
- * Inicia a gravação da tela inteira.
+ * Cria a janela do contador de tempo.
+ */
+const createCounterWindow = () => {
+    counterWindow = new BrowserWindow({
+        width: 120,
+        height: COUNTER_WINDOW_HEIGHT,
+        transparent: true,
+        frame: false,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        focusable: false,
+        webPreferences: {
+            preload: path.join(__dirname, 'counter.js'),
+        },
+    });
+
+    counterWindow.setIgnoreMouseEvents(true, { forward: true });
+    counterWindow.loadFile('counter.html');
+    counterWindow.setContentProtection(true); // Impede a captura da janela (Win/macOS)
+
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width } = primaryDisplay.workAreaSize;
+    counterWindow.setPosition(Math.round((width / 2) - 60), 0);
+
+    counterWindow.on('close', (e) => {
+        e.preventDefault();
+        counterWindow.hide();
+    });
+
+    counterWindow.hide(); // A janela começa escondida
+};
+
+
+/**
+ * Inicia a gravação (tela cheia ou área selecionada).
+ * @param {object|null} area - Objeto com {x, y, width, height} ou null para tela cheia.
  */
 const startRecording = () => {
-  // Se já estiver gravando, não faz nada
-  if (isRecording) return;
-
-  isRecording = true;
-  updateTrayMenu(); // Atualiza o menu para exibir "Stop Recording"
-
-  // Obtém o tamanho da tela principal
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-  const desktopPath = app.getPath("desktop"); // Caminho para a área de trabalho
-  const outputPath = path.join(desktopPath, `gravacao-${Date.now()}.mp4`); // Nome do arquivo de saída
-
-  // Comando do ffmpeg para gravar a tela.
-  // Este comando pode precisar de ajustes dependendo do seu sistema operacional.
-  // Certifique-se de que o ffmpeg está instalado e no PATH do seu sistema.
-  let command;
-  switch (process.platform) {
-    case 'win32': // Windows
-      // 'gdigrab' captura a área de trabalho no Windows.
-      command = `ffmpeg -f gdigrab -framerate 30 -i desktop -c:v libx264 -preset ultrafast -pix_fmt yuv420p "${outputPath}"`;
-      break;
-    case 'darwin': // macOS
-      // 'avfoundation' é usado para macOS. O dispositivo "1:0" pode variar.
-      // Você pode precisar conceder permissões de gravação de tela para o seu terminal ou app.
-      command = `ffmpeg -f avfoundation -i "1:0" -r 30 -c:v libx264 -preset ultrafast -pix_fmt yuv420p "${outputPath}"`;
-      break;
-    case 'linux': // Linux
-      // 'x11grab' para Linux. ':0.0' representa o display principal.
-      command = `ffmpeg -f x11grab -r 30 -s ${width}x${height} -i :0.0 -c:v libx264 -preset ultrafast -pix_fmt yuv420p "${outputPath}"`;
-      break;
-    default:
-      console.error("Plataforma não suportada para gravação.");
-      isRecording = false;
-      updateTrayMenu(); // Reverte o menu
-      return;
-  }
-
-  console.log("Iniciando gravação da tela inteira...");
-  console.log(`Comando executado: ${command}`);
-
-  // Executa o comando ffmpeg como um processo filho
-  ffmpegProcess = exec(command, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Erro ao executar ffmpeg: ${error.message}`);
-      // Poderia exibir uma notificação de erro para o usuário aqui
-    }
-    console.log(`ffmpeg stdout: ${stdout}`);
-    console.error(`ffmpeg stderr: ${stderr}`);
-  });
-
-  // Lida com o encerramento do processo ffmpeg
-  ffmpegProcess.on('exit', (code) => {
-    console.log(`Processo ffmpeg encerrado com código ${code}`);
-    // O código 255 geralmente indica que foi interrompido pela tecla 'q', o que é normal.
-    if (code !== 0 && code !== 255) {
-      console.error("A gravação falhou ou foi interrompida inesperadamente.");
-    } else {
-      console.log(`Gravação salva com sucesso em: ${outputPath}`);
-    }
-    // Reseta o estado
-    isRecording = false;
-    ffmpegProcess = null;
+    if (isRecording) return;
+    isRecording = true;
     updateTrayMenu();
-  });
+
+    // Inicia e exibe o contador
+    seconds = 0;
+    counterWindow.webContents.send('update-timer', '00:00');
+    counterWindow.show();
+    counterInterval = setInterval(() => {
+        seconds++;
+        const formattedTime = new Date(seconds * 1000).toISOString().substr(14, 5);
+        counterWindow.webContents.send('update-timer', formattedTime);
+    }, 1000);
+
+    const desktopPath = app.getPath("desktop");
+    const outputPath = path.join(desktopPath, `gravacao-${Date.now()}.mp4`);
+    const commonOptions = `-c:v libx264 -preset ultrafast -pix_fmt yuv420p "${outputPath}"`;
+    let command;
+
+    switch (process.platform) {
+        case 'win32':
+            command = `ffmpeg -f gdigrab -framerate 30 -i desktop ${commonOptions}`;
+            break;
+        case 'darwin':
+            command = `ffmpeg -f avfoundation -i "1:0" -r 30 ${commonOptions}`;
+            break;
+        case 'linux':
+            const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+            command = `ffmpeg -f x11grab -r 30 -s ${width}x${height} -i :0.0 ${commonOptions}`;
+            break;
+        default:
+            console.error("Plataforma não suportada.");
+            isRecording = false;
+            updateTrayMenu();
+            return;
+    }
+
+    console.log("Iniciando gravação...", `Comando: ${command}`);
+    ffmpegProcess = exec(command, (error) => {
+        if (error && !error.killed) {
+            console.error(`Erro ao executar ffmpeg: ${error.message}`);
+        }
+    });
+
+    ffmpegProcess.on('exit', (code) => {
+        console.log(`Processo ffmpeg encerrado com código ${code}`);
+        if (code !== 0 && code !== 255) console.error("A gravação falhou.");
+        else console.log(`Gravação salva em: ${outputPath}`);
+        
+        isRecording = false;
+        ffmpegProcess = null;
+        updateTrayMenu();
+        clearInterval(counterInterval);
+        counterWindow.hide();
+    });
 };
 
 /**
  * Para a gravação da tela.
  */
 const stopRecording = () => {
-  // Se não estiver gravando ou o processo não existir, não faz nada
-  if (!isRecording || !ffmpegProcess) return;
-
-  console.log("Parando a gravação...");
-  // Envia o caractere 'q' para o stdin do ffmpeg, que é o comando para parar a gravação de forma segura.
-  ffmpegProcess.stdin.write('q');
-  // O evento 'exit' do processo cuidará da limpeza do estado.
+    if (!isRecording || !ffmpegProcess) return;
+    console.log("Parando a gravação...");
+    ffmpegProcess.stdin.write('q');
 };
 
 /**
- * Constrói e atualiza o menu da bandeja com base no estado da gravação.
+ * Constrói e atualiza o menu da bandeja.
  */
 const updateTrayMenu = () => {
-  const template = [
-    isRecording
-      ? {
-          label: "Stop Recording",
-          click: stopRecording,
-        }
-      : {
-          label: "Record Screen",
-          click: startRecording,
-        },
-    {
-      label: "Record Area",
-      click: () => console.log("Iniciando gravação de área selecionada... (não implementado)"),
-    },
-    { type: "separator" },
-    { label: "Sair", click: () => app.quit() },
-  ];
+    const template = [
+        isRecording
+            ? { label: "Stop Recording", click: stopRecording }
+            : { label: "Record Screen", click: startRecording },
+        { type: "separator" },
+        { label: "Sair", click: () => app.quit() },
+    ];
 
-  const contextMenu = Menu.buildFromTemplate(template);
-  tray.setContextMenu(contextMenu);
-
-  // Garante que o clique esquerdo também funcione, como no código original
-  tray.removeAllListeners('click'); // Remove listeners antigos para evitar duplicação
-  tray.on("click", () => {
-    tray.popUpContextMenu(); // Abre o menu que acabamos de definir
-  });
+    const contextMenu = Menu.buildFromTemplate(template);
+    tray.setContextMenu(contextMenu);
+    tray.removeAllListeners('click');
+    tray.on("click", () => tray.popUpContextMenu());
 };
 
+// Ciclo de vida da aplicação
+ipcMain.on('stop-recording', stopRecording);
 
-app.whenReady().then(() => {
-  tray = new Tray(path.join(__dirname, "icon.png")); // Ícone da bandeja
-  tray.setToolTip("Meu App de Gravação");
-
-  updateTrayMenu(); // Cria e define o menu inicial
+// Make the counter window clickable
+ipcMain.on('make-window-clickable', () => {
+    counterWindow.setIgnoreMouseEvents(false);
 });
 
-// Garante que a gravação seja interrompida se o aplicativo for fechado
+// Make the counter window unclickable
+ipcMain.on('make-window-unclickable', () => {
+    counterWindow.setIgnoreMouseEvents(true, { forward: true });
+});
+
+app.whenReady().then(() => {
+    tray = new Tray(path.join(__dirname, "icon.png"));
+    tray.setToolTip("Screen Recorder");
+    createCounterWindow();
+    updateTrayMenu();
+});
+
 app.on('before-quit', () => {
-  if (isRecording) {
-    stopRecording();
-  }
+    if (isRecording) stopRecording();
+    if (counterWindow) counterWindow.destroy();
 });
