@@ -1,5 +1,5 @@
 {
-  "name": "screen-recorder",
+  "name": "screentools",
   "version": "1.0.0",
   "description": "Um aplicativo simples para gravar a tela com Electron e FFmpeg.",
   "main": "main.js",
@@ -8,7 +8,7 @@
     "dist": "electron-builder"
   },
   "build": {
-    "appId": "com.example.screen-recorder",
+    "appId": "com.screentools",
     "productName": "Screen Recorder",
     "files": [
       "main.js",
