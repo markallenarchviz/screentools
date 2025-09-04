@@ -42,7 +42,7 @@
   "author": "Mark Allen",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^31.0.0",
+    "electron": "^35.7.5",
     "electron-builder": "^26.0.12"
   },
   "dependencies": {
